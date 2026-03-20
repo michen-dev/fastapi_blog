@@ -43,7 +43,10 @@ app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
 @app.get("/", include_in_schema=False, name="home")
 @app.get("/posts", include_in_schema=False, name="posts")
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
-    res = await db.execute(select(models.Post).options(selectinload(models.Post.author)))
+    res = await db.execute(
+        select(models.Post)
+        .options(selectinload(models.Post.author))
+        .order_by(models.Post.date_posted.desc()))
     posts = res.scalars().all()
     return templates.TemplateResponse(
         request,
@@ -73,7 +76,7 @@ async def post_page(request: Request, post_id: int, db: Annotated[AsyncSession, 
 
 @app.get("/users/{user_id}/posts", include_in_schema=False, name="user_posts")
 async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
-    res = db.execute(select(models.User).where(models.User.id == user_id))
+    res = await db.execute(select(models.User).where(models.User.id == user_id))
     user = res.scalars().first()
     if not user:
         raise HTTPException(
@@ -83,8 +86,9 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
 
     res = await db.execute(
         select(models.Post)
-        .option(selectinload(models.Post.author))
-        .where(models.Post.user_id == user_id))
+        .options(selectinload(models.Post.author))
+        .where(models.Post.user_id == user_id)
+        .order_by(models.Post.date_posted.desc()))
     posts = res.scalars().all()
 
     return templates.TemplateResponse(
@@ -132,11 +136,3 @@ async def validation_exception_handler(request: Request, exception: RequestValid
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
     )
 
-# <-------------------- API -------------------->
-
-
-# <----- Manage User ----->
-
-
-
-# <----- Manage Post ----->
