@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +17,7 @@ import models
 from database import Base, engine, get_db
 
 from routers import posts, users
+from config import settings
 
 
 
@@ -43,15 +44,25 @@ app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
 @app.get("/", include_in_schema=False, name="home")
 @app.get("/posts", include_in_schema=False, name="posts")
 async def home(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+    count_res = await db.execute(select(func.count()).select_from(models.Post))
+    total = count_res.scalar() or 0
+
     res = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
-        .order_by(models.Post.date_posted.desc()))
-    posts = res.scalars().all()
+        .order_by(models.Post.date_posted.desc())
+        .limit(settings.posts_per_page))
+    posts_list = res.scalars().all()
+
+    has_more = len(posts_list) < total
+
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"posts": posts, "title": "Home"}
+        {"posts": posts_list, 
+        "title": "Home",
+        "limit": settings.posts_per_page,
+        "has_more": has_more}
     )
 
 
@@ -84,17 +95,27 @@ async def user_posts_page(request: Request, user_id: int, db: Annotated[AsyncSes
             detail = "User not found"
         )
 
+    res = await db.execute(select(func.count()).select_from(models.Post).where(models.Post.user_id == user_id))
+    total = res.scalar() or 0
+
     res = await db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author))
         .where(models.Post.user_id == user_id)
-        .order_by(models.Post.date_posted.desc()))
+        .order_by(models.Post.date_posted.desc())
+        .limit(settings.posts_per_page))
     posts = res.scalars().all()
+
+    has_more = len(posts) < total
 
     return templates.TemplateResponse(
         request,
         "user_posts.html",
-        {"posts": posts, "user": user, "title": f"{user.username}'s Posts"}
+        {"posts": posts, 
+        "user": user, 
+        "title": f"{user.username}'s Posts",
+        "limit": settings.posts_per_page,
+        "has_more": has_more}
     )
 
 
